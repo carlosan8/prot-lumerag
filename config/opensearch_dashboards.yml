@@ -1,0 +1,4 @@
+server.host: "0.0.0.0"
+opensearch.hosts: ["https://opensearch:9200"]
+opensearch.ssl.verificationMode: full
+opensearch.ssl.certificateAuthorities: ["/etc/opensearch-ca/ca.pem"]

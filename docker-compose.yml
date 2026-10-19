@@ -1,0 +1,142 @@
+services:
+  # --- BANCO DE DADOS VETORIAL ---
+  opensearch:
+    image: opensearchproject/opensearch:2.14.0
+    container_name: opensearch-rag
+    environment:
+      cluster.name: opensearch-cluster
+      node.name: opensearch-node1
+      discovery.type: single-node
+      bootstrap.memory_lock: "true"
+      OPENSEARCH_JAVA_OPTS: "${OPENSEARCH_JAVA_OPTS:--Xms512m -Xmx512m}"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: "${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?Set OPENSEARCH_INITIAL_ADMIN_PASSWORD in .env}"
+      plugins.security.unsupported.restapi.allow_securityconfig_modification: "true"
+      plugins.security.ssl.http.enabled: "true"
+      plugins.security.ssl.http.pemcert_filepath: certs/opensearch.pem
+      plugins.security.ssl.http.pemkey_filepath: certs/opensearch-key.pem
+      plugins.security.ssl.http.pemtrustedcas_filepath: ca/ca.pem
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+      - opensearch-certs:/usr/share/opensearch/config/certs:ro
+      - opensearch-ca:/usr/share/opensearch/config/ca:ro
+    ports:
+      - "127.0.0.1:${OPENSEARCH_PORT:-9200}:9200"
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl --cacert /usr/share/opensearch/config/ca/ca.pem -s -o /dev/null -w '%{http_code}' https://localhost:9200 | grep -Eq '^(200|401)$'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  opensearch-certs:
+      image: alpine:3.20
+      container_name: opensearch-certs-init
+      command: ["/bin/sh", "/scripts/generate-opensearch-certs.sh"]
+      volumes:
+        - opensearch-certs:/certs
+        - opensearch-ca:/ca
+        - ./scripts/generate-opensearch-certs.sh:/scripts/generate-opensearch-certs.sh:ro
+
+  # --- UI DE GERENCIAMENTO ---
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.14.0
+    container_name: dashboards-rag
+    ports:
+      - "127.0.0.1:${OPENSEARCH_DASHBOARDS_PORT:-5601}:5601"
+    environment:
+      OPENSEARCH_USERNAME: "${OPENSEARCH_USERNAME:-admin}"
+      OPENSEARCH_PASSWORD: "${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?Set OPENSEARCH_INITIAL_ADMIN_PASSWORD in .env}"
+    volumes:
+      - ./config/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml:ro
+      - opensearch-ca:/etc/opensearch-ca:ro
+    depends_on:
+      opensearch-certs:
+        condition: service_completed_successfully
+      opensearch:
+        condition: service_healthy
+    networks:
+      - rag-network
+
+    # --- PROVEDOR DE LLM LOCAL COM SUPORTE A GPU ---
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-rag
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2}"
+      OLLAMA_EMBEDDING_MODEL: "${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+    # Ativa o suporte à sua GTX 1650 dentro do container Docker
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - rag-network
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        echo "Baixando o modelo ${OLLAMA_MODEL:-llama3.2}..."
+        ollama pull "${OLLAMA_MODEL:-llama3.2}"
+        echo "Baixando o modelo de embeddings ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}..."
+        ollama pull "${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+        tail -f /dev/null
+
+
+  # --- MULTI-AGENTES COM CREWAI E INTERFACE WEB ---
+  crewai-app:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    container_name: crewai-rag-agent
+    volumes:
+      - ./src:/app/src
+      - opensearch-ca:/etc/opensearch-ca:ro
+    ports:
+      - "127.0.0.1:7860:7860"
+    environment:
+      APP_USERS_JSON: "${APP_USERS_JSON:?Set APP_USERS_JSON in .env}"
+      OPENSEARCH_HOST: opensearch
+      OPENSEARCH_PORT: "9200"
+      OPENSEARCH_SCHEME: https
+      OPENSEARCH_USERNAME: "${OPENSEARCH_USERNAME:-admin}"
+      OPENSEARCH_PASSWORD: "${OPENSEARCH_INITIAL_ADMIN_PASSWORD:?Set OPENSEARCH_INITIAL_ADMIN_PASSWORD in .env}"
+      OPENSEARCH_CA_CERT: /etc/opensearch-ca/ca.pem
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2}"
+      OLLAMA_EMBEDDING_MODEL: "${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+    depends_on:
+      opensearch-certs:
+        condition: service_completed_successfully
+      opensearch:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - rag-network
+
+volumes:
+  opensearch-data:
+  opensearch-certs:
+  opensearch-ca:
+  ollama-models:
+
+networks:
+  rag-network:
+    driver: bridge
