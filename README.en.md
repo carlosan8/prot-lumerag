@@ -2,6 +2,8 @@
 
 [English](README.en.md) | [Português](README.md)
 
+**License:** [MIT](LICENSE)
+
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![OpenSearch](https://img.shields.io/badge/OpenSearch-VectorDB-005EB8?style=flat-square&logo=opensearch&logoColor=white)
