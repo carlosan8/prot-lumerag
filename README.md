@@ -1,5 +1,7 @@
 # Prot_lumerag — RAG local com CrewAI, OpenSearch e Ollama
 
+[Português](README.md) | [English](README.en.md)
+
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white)
 ![OpenSearch](https://img.shields.io/badge/OpenSearch-VectorDB-005EB8?style=flat-square&logo=opensearch&logoColor=white)
@@ -142,7 +144,8 @@ Docker.
 
 > Para testar sem GPU NVIDIA, remova temporariamente o bloco
 > `deploy.resources.reservations.devices` do serviço `ollama` em
-> `docker-compose.yml`. O Ollama poderá usar CPU, com desempenho inferior.
+> `docker-compose.yml` e defina `OLLAMA_LLM_LIBRARY=cpu` no `.env`. O Ollama
+> usará CPU, com desempenho inferior.
 
 ### Ambiente em que foi testado
 
@@ -216,6 +219,8 @@ em `.env.example`, incluindo:
 - `OLLAMA_MODEL`: modelo generativo usado pela aplicação.
 - `OLLAMA_EMBEDDING_MODEL`: modelo local usado para gerar embeddings
   (padrão: `nomic-embed-text`, com 768 dimensões).
+- `OLLAMA_LLM_LIBRARY`: backend de inferência do Ollama (`cuda_v12` por padrão;
+  use `cpu` ao executar sem GPU NVIDIA).
 - `OPENSEARCH_JAVA_OPTS`: memória inicial e máxima da JVM do OpenSearch.
 
 ### Escolha de um modelo maior
